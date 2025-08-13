@@ -52,3 +52,4 @@ func (s *messageService) GetMessages(ctx context.Context, cursor string, limit i
 	}
 	return s.repo.GetMessages(ctx, cursor, limit)
 }
+

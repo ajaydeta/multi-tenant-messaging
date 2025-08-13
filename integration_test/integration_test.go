@@ -5,12 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	http_handler "multi-tenant-messaging/internal/handler/http"
-	"multi-tenant-messaging/internal/handler/rabbitmq"
-	"multi-tenant-messaging/internal/manager"
-	"multi-tenant-messaging/internal/repository"
-	"multi-tenant-messaging/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,23 +14,28 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 	_ "github.com/lib/pq"
-	"github.com/ory/dockertest"
-	"github.com/ory/dockertest/docker"
 	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/suite"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+
+	http_handler "multi-tenant-messaging/internal/handler/http"
+	"multi-tenant-messaging/internal/handler/rabbitmq"
+	"multi-tenant-messaging/internal/manager"
+	"multi-tenant-messaging/internal/repository"
+	"multi-tenant-messaging/internal/service"
 )
 
 type IntegrationTestSuite struct {
 	suite.Suite
-	db           *sqlx.DB
-	rabbitConn   *amqp.Connection
-	pool         *dockertest.Pool
-	pgResource   *dockertest.Resource
-	rbmqResource *dockertest.Resource
-	echo         *echo.Echo
-	tenantMgr    *manager.TenantManager
-	tenantSvc    service.TenantService
+	db            *sqlx.DB
+	rabbitConn    *amqp.Connection
+	pgContainer   testcontainers.Container
+	rbmqContainer testcontainers.Container
+	echo          *echo.Echo
+	tenantMgr     *manager.TenantManager
+	tenantSvc     service.TenantService
 }
 
 func TestIntegration(t *testing.T) {
@@ -44,59 +43,57 @@ func TestIntegration(t *testing.T) {
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
+	ctx := context.Background()
 	var err error
-	s.pool, err = dockertest.NewPool("")
-	s.Require().NoError(err)
 
-	s.pool.MaxWait = 120 * time.Second
-
-	s.pgResource, err = s.pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres",
-		Tag:        "14-alpine",
-		Env: []string{
-			"POSTGRES_PASSWORD=secret",
-			"POSTGRES_USER=user_test",
-			"POSTGRES_DB=test_db",
-			"listen_addresses = '*'",
+	pgReq := testcontainers.ContainerRequest{
+		Image:        "postgres:14-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER":     "user_test",
+			"POSTGRES_PASSWORD": "secret",
+			"POSTGRES_DB":       "test_db",
 		},
-	}, func(config *docker.HostConfig) {
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(5 * time.Minute),
+	}
+	s.pgContainer, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: pgReq,
+		Started:          true,
 	})
 	s.Require().NoError(err)
 
-	dbURL := fmt.Sprintf("postgres://user_test:secret@%s/test_db?sslmode=disable", s.pgResource.GetHostPort("5432/tcp"))
+	pgPort, err := s.pgContainer.MappedPort(ctx, "5432")
+	s.Require().NoError(err)
+	pgHost, err := s.pgContainer.Host(ctx)
+	s.Require().NoError(err)
+	dbURL := fmt.Sprintf("postgres://user_test:secret@%s:%s/test_db?sslmode=disable", pgHost, pgPort.Port())
 
-	s.Require().NoError(s.pool.Retry(func() error {
-		s.db, err = sqlx.Connect("postgres", dbURL)
-		if err != nil {
-			return err
-		}
-		return s.db.Ping()
-	}))
+	s.db, err = sqlx.Connect("postgres", dbURL)
+	s.Require().NoError(err)
 
-	s.rbmqResource, err = s.pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "rabbitmq",
-		Tag:        "3.12-management-alpine",
-		Env: []string{
-			"RABBITMQ_DEFAULT_USER=guest",
-			"RABBITMQ_DEFAULT_PASS=guest",
+	rbmqReq := testcontainers.ContainerRequest{
+		Image:        "rabbitmq:3.12-management-alpine",
+		ExposedPorts: []string{"5672/tcp"},
+		Env: map[string]string{
+			"RABBITMQ_DEFAULT_USER": "guest",
+			"RABBITMQ_DEFAULT_PASS": "guest",
 		},
-	}, func(config *docker.HostConfig) {
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		WaitingFor: wait.ForLog("Server startup complete").WithStartupTimeout(5 * time.Minute),
+	}
+	s.rbmqContainer, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: rbmqReq,
+		Started:          true,
 	})
 	s.Require().NoError(err)
 
-	rabbitURL := fmt.Sprintf("amqp://guest:guest@%s", s.rbmqResource.GetHostPort("5672/tcp"))
+	rbmqPort, err := s.rbmqContainer.MappedPort(ctx, "5672")
+	s.Require().NoError(err)
+	rbmqHost, err := s.rbmqContainer.Host(ctx)
+	s.Require().NoError(err)
+	rabbitURL := fmt.Sprintf("amqp://guest:guest@%s:%s/", rbmqHost, rbmqPort.Port())
 
-	s.Require().NoError(s.pool.Retry(func() error {
-		s.rabbitConn, err = amqp.Dial(rabbitURL)
-		if err != nil {
-			return err
-		}
-		return nil
-	}))
+	s.rabbitConn, err = amqp.Dial(rabbitURL)
+	s.Require().NoError(err)
 
 	viper.Set("database.url", dbURL)
 	viper.Set("rabbitmq.url", rabbitURL)
@@ -107,15 +104,13 @@ func (s *IntegrationTestSuite) SetupSuite() {
 }
 
 func (s *IntegrationTestSuite) TearDownSuite() {
-	s.tenantMgr.ShutdownAll(context.Background())
+	ctx := context.Background()
+	s.tenantMgr.ShutdownAll(ctx)
 	s.rabbitConn.Close()
 	s.db.Close()
-	if err := s.pool.Purge(s.pgResource); err != nil {
-		log.Fatalf("Could not purge postgres resource: %s", err)
-	}
-	if err := s.pool.Purge(s.rbmqResource); err != nil {
-		log.Fatalf("Could not purge rabbitmq resource: %s", err)
-	}
+
+	s.Require().NoError(s.pgContainer.Terminate(ctx))
+	s.Require().NoError(s.rbmqContainer.Terminate(ctx))
 }
 
 func (s *IntegrationTestSuite) setupDatabase() {
@@ -180,6 +175,7 @@ func (s *IntegrationTestSuite) setupApp() {
 }
 
 func (s *IntegrationTestSuite) TestTenantLifecycle() {
+
 	reqBody := `{"name": "test-tenant-1"}`
 	req := httptest.NewRequest(http.MethodPost, "/tenants", bytes.NewBufferString(reqBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -218,6 +214,7 @@ func (s *IntegrationTestSuite) TestTenantLifecycle() {
 
 	time.Sleep(2 * time.Second)
 	var msgCount int
+
 	err = s.db.Get(&msgCount, "SELECT COUNT(*) FROM messages WHERE tenant_id = $1", tenant.ID)
 	s.Require().NoError(err)
 	s.Require().Equal(1, msgCount, "Message should be saved to the database")
