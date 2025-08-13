@@ -93,7 +93,11 @@ func (s *tenantService) startConsumerForTenant(tenant *repository.Tenant) error 
 
 	control.Wg.Add(1)
 	go func() {
-		defer control.Wg.Done()
+		defer func() {
+			control.Wg.Done()
+			fmt.Printf("Consumer for tenant %s has stopped.\n", tenant.ID)
+		}()
+
 		defer s.tenantManager.RemoveConsumer(tenant.ID)
 		log.Printf("Starting consumer for tenant %s with %d workers", tenant.ID, tenant.Concurrency)
 

@@ -28,6 +28,8 @@ func NewTenantConsumer(tenantID uuid.UUID, channel *amqp.Channel, msgService ser
 }
 
 func (c *TenantConsumer) Start(shutdown chan struct{}) error {
+	log.Printf("[Consumer %s] Start", c.tenantID)
+
 	queueName := fmt.Sprintf("tenant_%s_queue", c.tenantID)
 	consumerTag := fmt.Sprintf("consumer_%s", c.tenantID)
 
@@ -52,42 +54,59 @@ func (c *TenantConsumer) Start(shutdown chan struct{}) error {
 		go c.worker(&wg, workerJobs)
 	}
 
-	log.Printf("[%s] Waiting for messages. To exit press CTRL+C", c.tenantID)
+	log.Printf("[Consumer %s] Waiting for messages", c.tenantID)
 
 	for {
 		select {
 		case <-shutdown:
-			log.Printf("[%s] Shutdown signal received. Closing consumer.", c.tenantID)
+			log.Printf("[Consumer %s] Shutdown signal received", c.tenantID)
 
 			close(workerJobs)
 
 			wg.Wait()
 
 			if err := c.channel.Cancel(consumerTag, false); err != nil {
-				log.Printf("[%s] Error canceling consumer: %v", c.tenantID, err)
+				log.Printf("[Consumer %s] Error canceling consumer: %v", c.tenantID, err)
 			}
 
 			c.channel.Close()
+			log.Printf("[Consumer %s] Stopped gracefully", c.tenantID)
 			return nil
 		case d, ok := <-msgs:
 			if !ok {
-				log.Printf("[%s] Message channel closed by RabbitMQ. Exiting.", c.tenantID)
+				log.Printf("[Consumer %s] Message channel closed by RabbitMQ", c.tenantID)
 				close(workerJobs)
 				wg.Wait()
+				log.Printf("[Consumer %s] Stopped gracefully", c.tenantID)
 				return nil
 			}
-			workerJobs <- d
+			select {
+			case workerJobs <- d:
+			case <-shutdown:
+				log.Printf("[Consumer %s] Shutdown signal received while sending to worker", c.tenantID)
+				close(workerJobs)
+				wg.Wait()
+				if err := c.channel.Cancel(consumerTag, false); err != nil {
+					log.Printf("[Consumer %s] Error canceling consumer: %v", c.tenantID, err)
+				}
+				c.channel.Close()
+				log.Printf("[Consumer %s] Stopped gracefully", c.tenantID)
+				return nil
+			}
 		}
 	}
 }
 
 func (c *TenantConsumer) worker(wg *sync.WaitGroup, jobs <-chan amqp.Delivery) {
-	defer wg.Done()
+	defer func() {
+		log.Printf("[Consumer %s] Worker stopped", c.tenantID)
+		wg.Done()
+	}()
 	for d := range jobs {
-		log.Printf("[%s] Worker received a message: %s", c.tenantID, d.Body)
+		log.Printf("[Consumer %s] Worker received message: %s", c.tenantID, d.Body)
 		err := c.msgService.ProcessMessage(context.Background(), c.tenantID, d.Body)
 		if err != nil {
-			log.Printf("[%s] Error processing message: %v. Sending to dead-letter.", c.tenantID, err)
+			log.Printf("[Consumer %s] Error processing message: %v. Sending to dead-letter.", c.tenantID, err)
 
 			d.Nack(false, false)
 		} else {

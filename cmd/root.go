@@ -134,11 +134,14 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	log.Println("Shutting down all tenant consumers...")
 	tenantManager.ShutdownAll(ctx)
+	log.Println("All tenant consumers stopped.")
 
 	if err := e.Shutdown(ctx); err != nil {
 		e.Logger.Fatal(err)
 	}
 
 	log.Println("Server gracefully stopped")
+	os.Exit(0)
 }
