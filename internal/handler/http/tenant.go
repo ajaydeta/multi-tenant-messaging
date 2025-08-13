@@ -29,15 +29,12 @@ type CreateTenantRequest struct {
 // @Produce  json
 // @Param   tenant  body    CreateTenantRequest  true  "Tenant Info"
 // @Success 201 {object} repository.Tenant
-// @Failure 400 {object} echo.HTTPError
-// @Failure 500 {object} echo.HTTPError
 // @Router /tenants [post]
 func (h *TenantHandler) CreateTenant(c echo.Context) error {
 	req := new(CreateTenantRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	// Tambahkan validasi jika perlu
 
 	tenant, err := h.service.CreateTenant(c.Request().Context(), req.Name)
 	if err != nil {
@@ -53,8 +50,6 @@ func (h *TenantHandler) CreateTenant(c echo.Context) error {
 // @Tags tenants
 // @Param   id   path      string  true  "Tenant ID"
 // @Success 204 "No Content"
-// @Failure 400 {object} echo.HTTPError
-// @Failure 500 {object} echo.HTTPError
 // @Router /tenants/{id} [delete]
 func (h *TenantHandler) DeleteTenant(c echo.Context) error {
 	idStr := c.Param("id")
@@ -83,8 +78,6 @@ type UpdateConcurrencyRequest struct {
 // @Param   id   path      string  true  "Tenant ID"
 // @Param   config  body    UpdateConcurrencyRequest  true  "Concurrency Config"
 // @Success 200 {object} map[string]string
-// @Failure 400 {object} echo.HTTPError
-// @Failure 500 {object} echo.HTTPError
 // @Router /tenants/{id}/config/concurrency [put]
 func (h *TenantHandler) UpdateConcurrency(c echo.Context) error {
 	idStr := c.Param("id")

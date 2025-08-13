@@ -1,0 +1,123 @@
+basePath: /
+definitions:
+  http.CreateTenantRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
+  http.UpdateConcurrencyRequest:
+    properties:
+      workers:
+        minimum: 1
+        type: integer
+    required:
+    - workers
+    type: object
+  repository.Tenant:
+    properties:
+      concurrency:
+        type: integer
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: This is a server for a multi-tenant messaging system.
+  title: Multi-Tenant Messaging API
+  version: "1.0"
+paths:
+  /messages:
+    get:
+      description: Retrieves a list of messages using cursor-based pagination.
+      parameters:
+      - description: Cursor for next page
+        in: query
+        name: cursor
+        type: string
+      - description: Limit per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get messages with cursor pagination
+      tags:
+      - messages
+  /tenants:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new tenant, sets up its message queue and consumer.
+      parameters:
+      - description: Tenant Info
+        in: body
+        name: tenant
+        required: true
+        schema:
+          $ref: '#/definitions/http.CreateTenantRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/repository.Tenant'
+      summary: Create a new tenant
+      tags:
+      - tenants
+  /tenants/{id}:
+    delete:
+      description: Deletes a tenant, its consumer, and its queue.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: Delete a tenant
+      tags:
+      - tenants
+  /tenants/{id}/config/concurrency:
+    put:
+      consumes:
+      - application/json
+      description: Updates the number of concurrent workers for a tenant's consumer.
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Concurrency Config
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/http.UpdateConcurrencyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update tenant's consumer concurrency
+      tags:
+      - tenants
+swagger: "2.0"

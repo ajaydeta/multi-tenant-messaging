@@ -25,7 +25,6 @@ func NewMessageHandler(s service.MessageService) *MessageHandler {
 // @Param   cursor    query     string  false  "Cursor for next page"
 // @Param   limit     query     int     false  "Limit per page"
 // @Success 200 {object} map[string]interface{}
-// @Failure 500 {object} echo.HTTPError
 // @Router /messages [get]
 func (h *MessageHandler) GetMessages(c echo.Context) error {
 	cursor := c.QueryParam("cursor")
