@@ -1,0 +1,11 @@
+server:
+  port: "8080"
+
+database:
+  url: "postgres://user:password@localhost:5000/multi_tenant_db?sslmode=disable"
+
+rabbitmq:
+  url: "amqp://guest:guest@localhost:5672/"
+
+app:
+  default_worker_concurrency: 3
