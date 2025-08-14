@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"multi-tenant-messaging/helper"
 	"multi-tenant-messaging/internal/service"
 	"sync"
 
@@ -30,7 +31,7 @@ func NewTenantConsumer(tenantID uuid.UUID, channel *amqp.Channel, msgService ser
 func (c *TenantConsumer) Start(shutdown chan struct{}) error {
 	log.Printf("[Consumer %s] Start", c.tenantID)
 
-	queueName := fmt.Sprintf("tenant_%s_queue", c.tenantID)
+	queueName := helper.GetQueueName(c.tenantID.String())
 	consumerTag := fmt.Sprintf("consumer_%s", c.tenantID)
 
 	msgs, err := c.channel.Consume(

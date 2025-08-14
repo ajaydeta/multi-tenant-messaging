@@ -20,6 +20,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"multi-tenant-messaging/helper"
 	http_handler "multi-tenant-messaging/internal/handler/http"
 	"multi-tenant-messaging/internal/handler/rabbitmq"
 	"multi-tenant-messaging/internal/manager"
@@ -147,7 +148,7 @@ func (s *IntegrationTestSuite) setupApp() {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open a channel for consumer: %w", err)
 		}
-		queueName := fmt.Sprintf("tenant_%s_queue", tenantID)
+		queueName := helper.GetQueueName(tenantID.String())
 		_, err = ch.QueueDeclare(queueName, true, false, false, false, nil)
 		if err != nil {
 			ch.Close()
@@ -198,7 +199,7 @@ func (s *IntegrationTestSuite) TestTenantLifecycle() {
 	s.Require().NoError(err)
 	defer ch.Close()
 
-	queueName := fmt.Sprintf("tenant_%s_queue", tenant.ID)
+	queueName := helper.GetQueueName(tenant.ID.String())
 	msgBody := `{"key": "value"}`
 	err = ch.Publish(
 		"",

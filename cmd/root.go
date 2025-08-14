@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"multi-tenant-messaging/helper"
 	http_handler "multi-tenant-messaging/internal/handler/http"
 	"multi-tenant-messaging/internal/handler/rabbitmq"
 	"multi-tenant-messaging/internal/manager"
@@ -77,7 +78,7 @@ func run(cmd *cobra.Command, args []string) {
 			return nil, fmt.Errorf("failed to open a channel for consumer: %w", err)
 		}
 
-		queueName := fmt.Sprintf("tenant_%s_queue", tenantID)
+		queueName := helper.GetQueueName(tenantID.String())
 		_, err = ch.QueueDeclare(
 			queueName, true, false, false, false, nil,
 		)

@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/streadway/amqp"
 
+	"multi-tenant-messaging/helper"
 	"multi-tenant-messaging/internal/manager"
 	"multi-tenant-messaging/internal/repository"
 )
@@ -127,7 +128,7 @@ func (s *tenantService) DeleteTenant(ctx context.Context, tenantID uuid.UUID) er
 	}
 	defer ch.Close()
 
-	queueName := fmt.Sprintf("tenant_%s_queue", tenantID)
+	queueName := helper.GetQueueName(tenantID.String())
 	_, err = ch.QueueDelete(queueName, false, false, false)
 	if err != nil {
 		log.Printf("Failed to delete queue %s: %v", queueName, err)
