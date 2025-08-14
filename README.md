@@ -3,7 +3,7 @@ This document explains how to set up, run, and use the application.
 
 ## 1. Prerequisites
 Ensure the following software is installed on your system:
-- Go: Version 1.21 or higher.
+- Go: Version 1.24.3 or higher.
 - Docker and Docker Compose: To run the database and message broker.
 
 ## 2. Configuration
