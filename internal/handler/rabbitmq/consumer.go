@@ -60,19 +60,9 @@ func (c *TenantConsumer) Start(shutdown chan struct{}) error {
 	for {
 		select {
 		case <-shutdown:
-			log.Printf("[Consumer %s] Shutdown signal received", c.tenantID)
-
-			close(workerJobs)
-
-			wg.Wait()
-
-			if err := c.channel.Cancel(consumerTag, false); err != nil {
-				log.Printf("[Consumer %s] Error canceling consumer: %v", c.tenantID, err)
-			}
-
-			c.channel.Close()
-			log.Printf("[Consumer %s] Stopped gracefully", c.tenantID)
+			c.shutdownWorkerJob(workerJobs, &wg, consumerTag)
 			return nil
+
 		case d, ok := <-msgs:
 			if !ok {
 				log.Printf("[Consumer %s] Message channel closed by RabbitMQ", c.tenantID)
@@ -84,18 +74,27 @@ func (c *TenantConsumer) Start(shutdown chan struct{}) error {
 			select {
 			case workerJobs <- d:
 			case <-shutdown:
-				log.Printf("[Consumer %s] Shutdown signal received while sending to worker", c.tenantID)
-				close(workerJobs)
-				wg.Wait()
-				if err := c.channel.Cancel(consumerTag, false); err != nil {
-					log.Printf("[Consumer %s] Error canceling consumer: %v", c.tenantID, err)
-				}
-				c.channel.Close()
-				log.Printf("[Consumer %s] Stopped gracefully", c.tenantID)
+				c.shutdownWorkerJob(workerJobs, &wg, consumerTag)
 				return nil
 			}
 		}
 	}
+}
+
+func (c *TenantConsumer) shutdownWorkerJob(workerJobs chan amqp.Delivery, wg *sync.WaitGroup, consumerTag string) {
+	log.Printf("[Consumer %s] Shutdown signal received while sending to worker", c.tenantID)
+
+	close(workerJobs)
+
+	wg.Wait()
+
+	if err := c.channel.Cancel(consumerTag, false); err != nil {
+		log.Printf("[Consumer %s] Error canceling consumer: %v", c.tenantID, err)
+	}
+
+	c.channel.Close()
+
+	log.Printf("[Consumer %s] Stopped gracefully", c.tenantID)
 }
 
 func (c *TenantConsumer) worker(wg *sync.WaitGroup, jobs <-chan amqp.Delivery) {
